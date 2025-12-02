@@ -11,38 +11,39 @@ class Block {
     }
 
     calculateHash() {
-        const raw = this.index + this.timestamp + JSON.stringify(this.data) + this.previousHash + this.addedBy;
+        const raw = `${this.index}|${this.timestamp}|${this.data}|${this.previousHash}|${this.addedBy}`;
         return crypto.createHash('sha256').update(raw).digest('hex');
     }
 }
 
 class SecureBlockchain {
     constructor(orgManager) {
-        this.orgManager = orgManager;
+        this.orgManager = orgManager || null;
         this.chain = [this.createGenesisBlock()];
     }
 
     createGenesisBlock() {
-        const defaultKey = "SystemKey2025!";
-        const key = (this.orgManager && typeof this.orgManager.getKey === 'function')
-            ? (this.orgManager.getKey('System') || defaultKey)
-            : defaultKey;
-        const encrypted = this.encrypt("System: Blockchain started", key);
-        return new Block(0, encrypted, "0", "System");
+        const defaultKey = (this.orgManager && typeof this.orgManager.getKey === 'function')
+            ? (this.orgManager.getKey('shared') || this.orgManager.getKey('System') || 'SystemKey2025!')
+            : 'SystemKey2025!';
+        const encrypted = this.encrypt(JSON.stringify({ type: 'GENESIS', content: 'Genesis' }), defaultKey);
+        return new Block(0, encrypted, '0', 'System');
     }
 
     encrypt(text, key) {
+        if (!key) throw new Error('No encryption key provided');
         const algorithm = 'aes-256-cbc';
-        const hashKey = crypto.createHash('sha256').update(String(key)).digest();
+        const hashKey = crypto.createHash('sha256').update(String(key)).digest(); // 32 bytes
         const iv = crypto.randomBytes(16);
         const cipher = crypto.createCipheriv(algorithm, hashKey, iv);
-        let encrypted = cipher.update(text, 'utf8', 'hex');
+        let encrypted = cipher.update(String(text), 'utf8', 'hex');
         encrypted += cipher.final('hex');
         return iv.toString('hex') + ':' + encrypted;
     }
 
     decrypt(encryptedText, key) {
         if (!encryptedText) throw new Error('No ciphertext provided');
+        if (!key) throw new Error('No decryption key provided');
         const algorithm = 'aes-256-cbc';
         const hashKey = crypto.createHash('sha256').update(String(key)).digest();
         const parts = String(encryptedText).split(':');
@@ -55,15 +56,18 @@ class SecureBlockchain {
         return decrypted;
     }
 
-    addBlock(data, orgId) {
+    addBlock(messageObj, orgId) {
         if (!this.orgManager || typeof this.orgManager.isValidator !== 'function' || typeof this.orgManager.getKey !== 'function') {
             throw new Error('Org manager not configured correctly');
         }
         if (!this.orgManager.isValidator(orgId)) {
             throw new Error(`${orgId} not authorized`);
         }
-        const key = this.orgManager.getKey(orgId);
-        const encrypted = this.encrypt(data, key);
+        // Use shared key if present so both sender & recipient can be decrypted server-side
+        const key = this.orgManager.getKey('shared') || this.orgManager.getKey(orgId);
+        if (!key) throw new Error('No encryption key available');
+        const payload = JSON.stringify(messageObj);
+        const encrypted = this.encrypt(payload, key);
         const last = this.chain[this.chain.length - 1];
         const block = new Block(last.index + 1, encrypted, last.hash, orgId);
         this.chain.push(block);
@@ -80,25 +84,22 @@ class SecureBlockchain {
         return true;
     }
 
-    tryDecrypt(blockIndex, orgId) {
+    // decrypt using shared (or fallback) key and return parsed object or throw
+    decryptMessage(blockIndex) {
         if (typeof blockIndex !== 'number' || blockIndex < 0 || blockIndex >= this.chain.length) {
-            return "[Invalid Block]";
+            throw new Error('Invalid block index');
         }
         const block = this.chain[blockIndex];
-        if (!block || !block.data) return "[No Data]";
-        if (!this.orgManager || typeof this.orgManager.getKey !== 'function') return "[Unknown Org]";
-        const key = this.orgManager.getKey(orgId);
-        if (!key) return "[Unknown Org]";
-        try {
-            return this.decrypt(block.data, key);
-        } catch (e) {
-            return "[Access Denied]";
-        }
+        if (!block || !block.data) throw new Error('No data');
+        const key = (this.orgManager && typeof this.orgManager.getKey === 'function')
+            ? (this.orgManager.getKey('shared') || this.orgManager.getKey(block.addedBy))
+            : null;
+        if (!key) throw new Error('No key for decryption');
+        const decrypted = this.decrypt(block.data, key);
+        return JSON.parse(decrypted);
     }
 }
 
-// Export the class as the module root so `const SecureBlockchain = require('./blockchain')` works,
-// and attach named properties so destructuring `const { SecureBlockchain, Block } = require('./blockchain')` also works.
 module.exports = SecureBlockchain;
 module.exports.SecureBlockchain = SecureBlockchain;
 module.exports.Block = Block;

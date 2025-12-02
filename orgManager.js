@@ -1,13 +1,12 @@
 // orgManager.js
 class OrgManager {
     constructor() {
-        // Simulated shared secrets (in real life, use Diffie-Hellman or PKI)
         this.orgKeys = {
             'Hospital': 'HospitalKey2025!',
             'Lab': 'LabSecretKey2025!',
             'Insurance': 'InsureKey2025!'
         };
-        this.validators = new Set(['Hospital', 'Lab', 'Insurance']); // PoA validators
+        this.validators = new Set(['Hospital', 'Lab', 'Insurance']);
     }
 
     isValidator(orgId) {

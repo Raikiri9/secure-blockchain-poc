@@ -1,0 +1,166 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Secure Healthcare Blockchain — Messages</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Segoe UI,Roboto,Arial;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;padding:24px}
+  .card{max-width:1100px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+  header{padding:20px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff}
+  .content{padding:20px}
+  .controls{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+  select,input,button{padding:10px;border-radius:8px;border:1px solid #ddd}
+  button{cursor:pointer}
+  .grid{display:flex;gap:20px}
+  .panel{flex:1;background:#f8f8f8;padding:12px;border-radius:8px;min-height:300px}
+  .message{background:#e8f3ff;padding:10px;border-radius:6px;margin-bottom:10px}
+  .meta{font-size:.9em;color:#666;margin-bottom:6px}
+  .block{background:#fff;padding:10px;border-radius:6px;margin-bottom:10px;border-left:4px solid #667eea}
+  .status{padding:12px;border-radius:8px;color:#fff;margin-bottom:12px}
+  .status.secure{background:linear-gradient(135deg,#11998e,#38ef7d)}
+  .status.comp{background:linear-gradient(135deg,#eb3349,#f45c43)}
+</style>
+</head>
+<body>
+  <div class="card">
+    <header><h2>Secure Healthcare Blockchain — Message Flow</h2></header>
+    <div class="content">
+      <div class="controls">
+        <label>Viewer:
+          <select id="viewer" onchange="fetchChain()">
+            <option>Hospital</option><option>Lab</option><option>Insurance</option>
+          </select>
+        </label>
+        <label>From:
+          <select id="fromOrg"><option>Hospital</option><option>Lab</option><option>Insurance</option></select>
+        </label>
+        <label>To:
+          <select id="toOrg"><option>Lab</option><option>Insurance</option><option>Hospital</option></select>
+        </label>
+        <label>Type:
+          <select id="type"><option>LAB_REQUEST</option><option>LAB_RESULT</option><option>CLAIM_SUBMISSION</option><option>CLAIM_APPROVAL</option></select>
+        </label>
+        <input id="content" placeholder="Message content" style="flex:1" />
+        <button onclick="sendMessage()">Send</button>
+        <button onclick="simulateTamper()">Tamper</button>
+        <button onclick="refresh()">Refresh</button>
+      </div>
+
+      <div id="statusBar" class="status secure">SECURE — blockchain ok</div>
+
+      <div class="grid">
+        <div class="panel">
+          <h3>📨 Messages (visible to viewer)</h3>
+          <div id="messages"></div>
+        </div>
+
+        <div class="panel">
+          <h3>⛓️ Blockchain Ledger</h3>
+          <div id="ledger"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+async function fetchChain() {
+  const viewer = document.getElementById('viewer').value;
+  try {
+    const res = await fetch('/api/chain?viewer=' + encodeURIComponent(viewer));
+    const json = await res.json();
+    const ok = json.valid === true;
+
+    document.getElementById('statusBar').className = ok ? 'status secure' : 'status comp';
+    document.getElementById('statusBar').textContent = ok ? '✅ SECURE — blockchain ok' : '❌ COMPROMISED — tampering detected';
+
+    // messages panel
+    const messages = document.getElementById('messages');
+    messages.innerHTML = '';
+    json.chain.forEach((b, idx) => {
+      if (b.index === 0) return;
+      const data = b.data;
+      const el = document.createElement('div');
+      el.className = 'message';
+      
+      // For each block, check if ONLY that block is tampered
+      // If chain is valid (ok=true), show all ✅
+      // If chain is invalid (ok=false), show ❌ only for block at index 1 (the tampered one)
+      const isTamperedBlock = !ok && idx === 1; // block index 1 is where tamper happens
+      const securityIcon = isTamperedBlock ? '❌' : '✅';
+      
+      if (data && data.content && data.type) {
+        el.innerHTML = `<div class="meta"><strong>${data.type}</strong> — ${b.addedBy} → ${data.to} • ${new Date(b.timestamp).toLocaleString()} <span style="float:right;font-size:1.2em">${securityIcon}</span></div>
+                        <div>${escapeHtml(data.content)}</div>`;
+      } else {
+        // encrypted or unavailable
+        el.innerHTML = `<div class="meta">[${b.addedBy}] • ${new Date(b.timestamp).toLocaleString()} <span style="float:right;font-size:1.2em">${securityIcon}</span></div>
+                        <div style="color:#999">${escapeHtml(data && data.content ? data.content : '[Encrypted or not authorized]')}</div>`;
+      }
+      messages.appendChild(el);
+    });
+
+    // ledger
+    const ledger = document.getElementById('ledger');
+    ledger.innerHTML = '';
+    json.chain.forEach((b, idx) => {
+      const el = document.createElement('div');
+      el.className = 'block';
+      const isTamperedBlock = !ok && idx === 1;
+      const blockStyle = isTamperedBlock ? 'border-left-color:#e74c3c' : '';
+      el.style.borderLeftColor = isTamperedBlock ? '#e74c3c' : '#667eea';
+      el.innerHTML = `<div class="meta">Block #${b.index} • ${b.addedBy} • ${new Date(b.timestamp).toLocaleString()} ${isTamperedBlock ? '<strong style="color:#e74c3c">❌ TAMPERED</strong>' : ''}</div>
+                      <div style="font-family:monospace;color:#666">${escapeHtml(typeof b.hash === 'string' ? b.hash : JSON.stringify(b.hash))}</div>`;
+      ledger.appendChild(el);
+    });
+  } catch (e) {
+    console.error(e);
+    document.getElementById('messages').innerHTML = '<div style="color:#999">Failed to load</div>';
+    document.getElementById('ledger').innerHTML = '<div style="color:#999">Failed to load</div>';
+  }
+}
+
+async function sendMessage() {
+  const from = document.getElementById('fromOrg').value;
+  const to = document.getElementById('toOrg').value;
+  const type = document.getElementById('type').value;
+  const content = document.getElementById('content').value.trim();
+  if (!content) return alert('Enter content');
+  try {
+    const res = await fetch('/api/add', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ from, to, type, content })
+    });
+    const j = await res.json();
+    if (res.ok && j.success) {
+      document.getElementById('content').value = '';
+      fetchChain();
+    } else {
+      alert('Error: ' + (j.error || 'failed'));
+    }
+  } catch (e) { alert('Request failed: ' + e.message); }
+}
+
+async function simulateTamper() {
+  if (!confirm('Simulate tampering?')) return;
+  const res = await fetch('/api/tamper', { method: 'POST' });
+  const j = await res.json();
+  if (res.ok && j.success) {
+    alert('Tampering applied. Messages will show ❌ until a new valid block is added.');
+    fetchChain();
+  } else {
+    alert('Tamper failed: ' + (j.error || ''));
+  }
+}
+
+function refresh(){ fetchChain(); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
+
+fetchChain();
+setInterval(fetchChain, 5000);
+</script>
+</body>
+</html>
