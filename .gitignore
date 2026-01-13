@@ -49,4 +49,3 @@ node_modules/
 # Temp files
 *.tmp
 tmp/
-load_sample_data.py
