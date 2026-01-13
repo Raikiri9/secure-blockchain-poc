@@ -13,6 +13,13 @@ from .serializers import (
     BusLocationSerializer, AlertSerializer
 )
 
+# Constants
+DEFAULT_CUSTOM_FARE = 5.00
+ALERT_COOLDOWN_SECONDS = 300  # 5 minutes
+PROXIMITY_ALERT_DISTANCE_KM = 5.0
+OVERDUE_ALERT_DISTANCE_KM = 20.0
+BUS_MOVING_SPEED_THRESHOLD_KMH = 1.0
+
 def calculate_distance(lat1, lon1, lat2, lon2):
     """Calculate distance between two GPS coordinates in km using Haversine formula"""
     R = 6371  # Earth's radius in kilometers
@@ -103,7 +110,7 @@ class PassengerViewSet(viewsets.ModelViewSet):
             passenger_data['destination_latitude'] = float(custom_lat)
             passenger_data['destination_longitude'] = float(custom_lon)
             # Default fare for custom destination
-            passenger_data['fare_paid'] = request.data.get('fare', 5.00)
+            passenger_data['fare_paid'] = request.data.get('fare', DEFAULT_CUSTOM_FARE)
         else:
             return Response(
                 {'error': 'Destination is required'},
@@ -233,7 +240,7 @@ class BusLocationViewSet(viewsets.ModelViewSet):
             latitude=float(latitude),
             longitude=float(longitude),
             speed=float(speed),
-            is_moving=float(speed) > 1.0  # Consider moving if speed > 1 km/h
+            is_moving=float(speed) > BUS_MOVING_SPEED_THRESHOLD_KMH
         )
         
         alerts_created = []
@@ -242,9 +249,9 @@ class BusLocationViewSet(viewsets.ModelViewSet):
         if location.is_moving:
             outside_passengers = Passenger.objects.filter(status='outside')
             for passenger in outside_passengers:
-                # Check if we haven't alerted recently (within 5 minutes)
+                # Check if we haven't alerted recently
                 if not passenger.last_notified_at or \
-                   (timezone.now() - passenger.last_notified_at).total_seconds() > 300:
+                   (timezone.now() - passenger.last_notified_at).total_seconds() > ALERT_COOLDOWN_SECONDS:
                     alert = Alert.objects.create(
                         passenger=passenger,
                         alert_type='restroom_left_behind',
@@ -264,10 +271,10 @@ class BusLocationViewSet(viewsets.ModelViewSet):
                 )
                 
                 # Approaching destination (within 5km)
-                if distance <= 5 and distance > 0:
+                if distance <= PROXIMITY_ALERT_DISTANCE_KM and distance > 0:
                     # Check if we haven't alerted recently
                     if not passenger.last_notified_at or \
-                       (timezone.now() - passenger.last_notified_at).total_seconds() > 300:
+                       (timezone.now() - passenger.last_notified_at).total_seconds() > ALERT_COOLDOWN_SECONDS:
                         alert = Alert.objects.create(
                             passenger=passenger,
                             alert_type='approaching_destination',
@@ -278,7 +285,7 @@ class BusLocationViewSet(viewsets.ModelViewSet):
                         alerts_created.append(alert.id)
                 
                 # Overdue passenger (20km past destination)
-                elif distance >= 20 and not passenger.is_overdue:
+                elif distance >= OVERDUE_ALERT_DISTANCE_KM and not passenger.is_overdue:
                     alert = Alert.objects.create(
                         passenger=passenger,
                         alert_type='overdue_passenger',

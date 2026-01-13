@@ -327,22 +327,27 @@
                 return;
             }
             
+            // Simulation constants (approximately 11 meters per 0.0001 degrees)
+            const LAT_INCREMENT = 0.0005;  // ~55 meters northward
+            const LON_INCREMENT = 0.0003;  // ~33 meters eastward
+            const SIMULATED_SPEED = 40; // km/h
+            const UPDATE_INTERVAL_MS = 3000; // 3 seconds
+            
             // Start simulation
             let currentLat = parseFloat(document.getElementById('inputLat').value);
             let currentLon = parseFloat(document.getElementById('inputLon').value);
-            const speed = 40; // km/h
             
             simulationInterval = setInterval(() => {
-                // Move bus slightly (approximately 0.0001 degrees = ~11 meters)
-                currentLat += 0.0005;
-                currentLon += 0.0003;
+                // Move bus slightly
+                currentLat += LAT_INCREMENT;
+                currentLon += LON_INCREMENT;
                 
                 document.getElementById('inputLat').value = currentLat.toFixed(4);
                 document.getElementById('inputLon').value = currentLon.toFixed(4);
-                document.getElementById('inputSpeed').value = speed;
+                document.getElementById('inputSpeed').value = SIMULATED_SPEED;
                 
                 updateLocation();
-            }, 3000); // Update every 3 seconds
+            }, UPDATE_INTERVAL_MS);
             
             alert('Bus movement simulation started. Click again to stop.');
         }
